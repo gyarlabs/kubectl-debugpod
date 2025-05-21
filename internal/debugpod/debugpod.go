@@ -1,76 +1,37 @@
 package debugpod
 
 import (
-    "fmt"
-    "os"
-    "os/exec"
+	"fmt"
+	"os/exec"
 )
 
 type DebugOptions struct {
-    Namespace string
-    Name      string
-    Image     string
-    Node      string
-    Stay      bool
-    Command   string
+	Namespace string
+	NodeName  string
+	Image     string
+	Stay      bool
+	UseBash   bool
 }
 
-func RunDebugPod(opt DebugOptions) error {
-    manifest := fmt.Sprintf(`
-apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  containers:
-  - name: debug
-    image: %s
-    command: ["/bin/sh", "-c", "%s"]
-    stdin: true
-    tty: true
-  restartPolicy: Never`, opt.Name, opt.Namespace, opt.Image, opt.Command)
+func RunDebugPod(opts DebugOptions) error {
+	args := []string{"run", "debugpod", "-n", opts.Namespace, "--image", opts.Image, "--rm", "-i", "--tty"}
+	if opts.NodeName != "" {
+		args = append(args, "--overrides", fmt.Sprintf(`{"spec": {"nodeName": "%s"}}`, opts.NodeName))
+	}
+	if opts.Stay {
+		args = append(args[:len(args)-2], "--restart=Never")
+	}
+	shell := "/bin/sh"
+	if opts.UseBash {
+		shell = "/bin/bash"
+	}
+	args = append(args, "--", shell)
 
-    if opt.Node != "" {
-        manifest += fmt.Sprintf("\n  nodeName: %q", opt.Node)
-    }
+	cmd := exec.Command("kubectl", args...)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 
-    file, err := os.CreateTemp("", "debugpod-*.yaml")
-    if err != nil {
-        return err
-    }
-    defer os.Remove(file.Name())
-
-    _, err = file.WriteString(manifest)
-    if err != nil {
-        return err
-    }
-    file.Close()
-
-    if err := exec.Command("kubectl", "apply", "-f", file.Name()).Run(); err != nil {
-        return err
-    }
-
-    waitCmd := exec.Command("kubectl", "wait", "--for=condition=Ready", "pod/"+opt.Name, "-n", opt.Namespace, "--timeout=30s")
-    waitCmd.Stdout = os.Stdout
-    waitCmd.Stderr = os.Stderr
-    if err := waitCmd.Run(); err != nil {
-        return err
-    }
-
-    attachCmd := exec.Command("kubectl", "-n", opt.Namespace, "attach", "-it", opt.Name)
-    attachCmd.Stdin = os.Stdin
-    attachCmd.Stdout = os.Stdout
-    attachCmd.Stderr = os.Stderr
-    if err := attachCmd.Run(); err != nil {
-        return err
-    }
-
-    if !opt.Stay {
-        _ = exec.Command("kubectl", "delete", "pod", opt.Name, "-n", opt.Namespace).Run()
-    } else {
-        fmt.Println("Pod is left running.")
-    }
-
-    return nil
+	fmt.Println("Running debug pod:", cmd.String())
+	return cmd.Run()
 }
