@@ -1,4 +1,4 @@
-module kubectl-debugpod
+module github.com/gyarlabs/kubectl-debugpod
 
 go 1.21
 
