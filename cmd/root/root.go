@@ -4,10 +4,10 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/gyarlabs/kubectl-debugpod/internal/cluster"
-	"github.com/gyarlabs/kubectl-debugpod/internal/debugpod"
-	"github.com/gyarlabs/kubectl-debugpod/internal/limits"
-	"github.com/gyarlabs/kubectl-debugpod/internal/secrets"
+	"kubectl-debugpod/internal/cluster"
+	"kubectl-debugpod/internal/debugpod"
+	"kubectl-debugpod/internal/limits"
+	"kubectl-debugpod/internal/secrets"
 )
 
 var (
