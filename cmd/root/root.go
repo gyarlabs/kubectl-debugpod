@@ -29,21 +29,21 @@ var rootCmd = &cobra.Command{
 	Short: "A Kubernetes CLI plugin to launch debug pods and check cluster state",
 	Run: func(cmd *cobra.Command, args []string) {
 		if clusterCheck {
-			cluster.Run(namespace, clusterArgs)
+			cluster.RunClusterCheck(namespace, clusterArgs)
 			return
 		}
 
 		if secretsNs != "" {
-			secrets.Run(secretsNs, secretsName, decodeSecrets)
+			secrets.GetSecrets(secretsNs, secretsName, decodeSecrets)
 			return
 		}
 
 		if checkLimits {
-			limits.Run(namespace)
+			limits.CheckLimits(namespace)
 			return
 		}
 
-		debugpod.Run(namespace, nodeName, image, stay, useBash)
+		debugpod.RunDebugPod(namespace, nodeName, image, stay, useBash)
 	},
 }
 
