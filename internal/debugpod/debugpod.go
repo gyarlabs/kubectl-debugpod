@@ -1,3 +1,22 @@
+package debugpod
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+type DebugOptions struct {
+	Namespace string
+	NodeName  string
+	Image     string
+	Stay      bool
+	UseBash   bool
+}
+
+var kubectlPath = "kubectl" // You can override this if needed
+
 func RunDebugPod(opts DebugOptions) {
 	podName := "debugpod"
 	args := []string{"run", podName, "-n", opts.Namespace, "--image", opts.Image, "--restart=Never"}
