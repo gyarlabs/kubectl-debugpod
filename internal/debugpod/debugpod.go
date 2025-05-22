@@ -1,22 +1,3 @@
-package debugpod
-
-import (
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-)
-
-type DebugOptions struct {
-	Namespace string
-	NodeName  string
-	Image     string
-	Stay      bool
-	UseBash   bool
-}
-
-var kubectlPath = "kubectl" // You can override this if needed
-
 func RunDebugPod(opts DebugOptions) {
 	podName := "debugpod"
 	args := []string{"run", podName, "-n", opts.Namespace, "--image", opts.Image, "--restart=Never"}
@@ -34,7 +15,12 @@ func RunDebugPod(opts DebugOptions) {
 		shell = "/bin/bash"
 	}
 
-	args = append(args, "--", shell)
+	// Attach shell directly unless --stay, then use sleep to hold the pod
+	if opts.Stay {
+		args = append(args, "--", "sleep", "3600")
+	} else {
+		args = append(args, "--", shell)
+	}
 
 	fmt.Println("Running debug pod:", kubectlPath, strings.Join(args, " "))
 
@@ -42,12 +28,12 @@ func RunDebugPod(opts DebugOptions) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error running debug pod: %v\n", err)
 		return
 	}
 
+	// Wait and attach only for --stay
 	if opts.Stay {
 		fmt.Println("Waiting for pod to be ready...")
 
