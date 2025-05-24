@@ -5,37 +5,36 @@ import (
 	"strings"
 
 	"github.com/gyarlabs/kubectl-debugpod/internal/debugpod"
+	"github.com/gyarlabs/kubectl-debugpod/internal/rbac"
 )
 
 func RunClusterCheck(userArgs []string) {
+	const (
+		namespace = "default"
+		name      = "debugpod"
+		image     = "arsaphone/debugpod:v2"
+	)
+
 	fmt.Println("Creating debug pod to run k8sgpt...")
 
-	if err := CreateRBAC(); err != nil {
-		fmt.Println("Failed to create RBAC:", err)
-		return
-	}
-	defer DeleteRBAC()
-
-	useAI := false
-	for _, arg := range userArgs {
-		if strings.Contains(arg, "--provider") || strings.Contains(arg, "--token") || strings.Contains(arg, "--no-ai") {
-			useAI = true
-			break
-		}
-	}
-
+	// Prepare k8sgpt command
 	args := []string{"analyze", "--output", "text"}
-	if !useAI {
-		args = append(args, "--no-ai")
-	}
 	args = append(args, userArgs...)
-
 	cmd := "k8sgpt " + strings.Join(args, " ")
 
+	// Create necessary RBAC resources
+	if err := rbac.CreateRBACResources(namespace, name); err != nil {
+		fmt.Printf("Failed to create RBAC resources: %v\n", err)
+		return
+	}
+	defer rbac.DeleteRBACResources(namespace, name)
+
+	// Run debug pod with the created service account
 	debugpod.RunDebugPod(debugpod.DebugOptions{
-		Namespace: "default",
-		Image:     "arsaphone/debugpod:v2",
-		Stay:      false,
-		Command:   []string{"/bin/sh", "-c", cmd},
+		Namespace:      namespace,
+		Image:          image,
+		Stay:           false,
+		ServiceAccount: fmt.Sprintf("%s-sa", name),
+		Command:        []string{"/bin/sh", "-c", cmd},
 	})
 }

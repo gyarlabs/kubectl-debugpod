@@ -8,12 +8,13 @@ import (
 )
 
 type DebugOptions struct {
-	Namespace string
-	NodeName  string
-	Image     string
-	Stay      bool
-	UseBash   bool
-	Command   []string // Used for cluster-check and other advanced modes
+	Namespace      string
+	NodeName       string
+	Image          string
+	Stay           bool
+	UseBash        bool
+	Command        []string
+	ServiceAccount string // <-- add this
 }
 
 var kubectlPath = "kubectl"
@@ -24,6 +25,10 @@ func RunDebugPod(opts DebugOptions) {
 
 	if opts.NodeName != "" {
 		args = append(args, "--overrides", fmt.Sprintf(`{"spec":{"nodeName":"%s"}}`, opts.NodeName))
+	}
+
+	if opts.ServiceAccount != "" {
+		args = append(args, "--serviceaccount", opts.ServiceAccount)
 	}
 
 	if !opts.Stay {

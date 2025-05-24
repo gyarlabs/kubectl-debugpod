@@ -1,4 +1,4 @@
-package cluster
+package rbac
 
 import (
 	"fmt"
@@ -6,77 +6,82 @@ import (
 	"strings"
 )
 
-const (
-	serviceAccount     = "debugpod-sa"
-	clusterRole        = "debugpod-role"
-	clusterRoleBinding = "debugpod-rolebinding"
-	namespace          = "default"
-)
-
-func CreateRBAC() error {
-	fmt.Println("Creating RBAC resources for k8sgpt...")
-
-	// Create sa
-	if err := kubectlApply([]string{"create", "serviceaccount", serviceAccount, "-n", namespace}); err != nil {
+func CreateRBACResources(namespace, name string) error {
+	if err := applyYAML(serviceAccount(namespace, name)); err != nil {
 		return err
 	}
-
-	// Create cr
-	roleYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: %s
-rules:
-- apiGroups: ["", "apps", "batch", "networking.k8s.io", "admissionregistration.k8s.io"]
-  resources: ["pods", "nodes", "configmaps", "services", "endpoints", "deployments", "replicasets", "cronjobs", "statefulsets", "ingresses", "validatingwebhookconfigurations", "mutatingwebhookconfigurations", "persistentvolumeclaims"]
-  verbs: ["get", "list"]
-`, clusterRole)
-
-	if err := kubectlApplyYAML(roleYAML); err != nil {
+	if err := applyYAML(clusterRole()); err != nil {
 		return err
 	}
-
-	// Create crb
-	bindingYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: %s
-subjects:
-- kind: ServiceAccount
-  name: %s
-  namespace: %s
-roleRef:
-  kind: ClusterRole
-  name: %s
-  apiGroup: rbac.authorization.k8s.io
-`, clusterRoleBinding, serviceAccount, namespace, clusterRole)
-
-	return kubectlApplyYAML(bindingYAML)
-}
-
-func DeleteRBAC() {
-	fmt.Println("Cleaning up RBAC resources...")
-
-	_ = kubectlApply([]string{"delete", "serviceaccount", serviceAccount, "-n", namespace})
-	_ = kubectlApply([]string{"delete", "clusterrole", clusterRole})
-	_ = kubectlApply([]string{"delete", "clusterrolebinding", clusterRoleBinding})
-}
-
-func kubectlApply(args []string) error {
-	cmd := exec.Command("kubectl", args...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Printf("Error: %s\n%s\n", err, string(output))
+	if err := applyYAML(clusterRoleBinding(namespace, name)); err != nil {
+		return err
 	}
-	return err
+	return nil
 }
 
-func kubectlApplyYAML(yaml string) error {
+func DeleteRBACResources(namespace, name string) {
+	exec.Command("kubectl", "delete", "serviceaccount", fmt.Sprintf("%s-sa", name), "-n", namespace).Run()
+	exec.Command("kubectl", "delete", "clusterrolebinding", fmt.Sprintf("%s-binding", name)).Run()
+	// Optional: delete ClusterRole if not shared
+	// exec.Command("kubectl", "delete", "clusterrole", "cluster-reader").Run()
+}
+
+func applyYAML(yaml string) error {
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(yaml)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Printf("Error: %s\n%s\n", err, string(output))
-	}
-	return err
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run()
+}
+
+func serviceAccount(namespace, name string) string {
+	return fmt.Sprintf(`
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: %s-sa
+  namespace: %s
+`, name, namespace)
+}
+
+func clusterRole() string {
+	return `
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "endpoints", "services", "configmaps", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["cronjobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
+  verbs: ["get", "list", "watch"]
+`
+}
+
+func clusterRoleBinding(namespace, name string) string {
+	return fmt.Sprintf(`
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: %s-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-reader
+subjects:
+- kind: ServiceAccount
+  name: %s-sa
+  namespace: %s
+`, name, name, namespace)
 }
