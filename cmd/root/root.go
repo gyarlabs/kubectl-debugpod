@@ -3,11 +3,11 @@ package root
 import (
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/gyarlabs/kubectl-debugpod/internal/cluster"
 	"github.com/gyarlabs/kubectl-debugpod/internal/debugpod"
 	"github.com/gyarlabs/kubectl-debugpod/internal/limits"
 	"github.com/gyarlabs/kubectl-debugpod/internal/secrets"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -44,12 +44,14 @@ var rootCmd = &cobra.Command{
 		}
 
 		debugpod.RunDebugPod(debugpod.DebugOptions{
-	Namespace: namespace,
-	NodeName:  nodeName,
-	Image:     image,
-	Stay:      stay,
-	UseBash:   useBash,
-})
+			Namespace:      namespace,
+			NodeName:       nodeName,
+			Image:          image,
+			Stay:           stay,
+			UseBash:        useBash,
+			ServiceAccount: "debugpod-sa",
+			ClusterCheck:   clusterCheck,
+		})
 	},
 }
 

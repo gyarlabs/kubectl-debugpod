@@ -50,6 +50,15 @@ func RunDebugPod(opts DebugOptions) {
 		return
 	}
 
+	if opts.ClusterCheck {
+		err := CreateRBAC(opts.Namespace)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating RBAC resources: %v\n", err)
+			return
+		}
+		defer DeleteRBAC(opts.Namespace)
+	}
+
 	data := struct {
 		Namespace      string
 		Image          string
@@ -67,6 +76,15 @@ func RunDebugPod(opts DebugOptions) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing pod template: %v\n", err)
 		return
+	}
+
+	if opts.ClusterCheck {
+		err := CreateRBAC(opts.Namespace)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating RBAC resources: %v\n", err)
+			return
+		}
+		defer DeleteRBAC(opts.Namespace)
 	}
 
 	// Apply the pod manifest
