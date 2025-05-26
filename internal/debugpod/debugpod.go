@@ -13,6 +13,9 @@ type DebugOptions struct {
 	Image          string
 	Command        []string
 	ServiceAccount string
+	NodeName       string
+	Stay           bool
+	UseBash        bool
 }
 
 const podTemplate = `
