@@ -1,61 +1,28 @@
 package rbac
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
-	"strings"
 )
 
-func CreateRBACResources(namespace, name string) error {
-	if err := applyYAML(serviceAccount(namespace, name)); err != nil {
-		return err
-	}
-	if err := applyYAML(clusterRole()); err != nil {
-		return err
-	}
-	if err := applyYAML(clusterRoleBinding(namespace, name)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func DeleteRBACResources(namespace, name string) {
-	exec.Command("kubectl", "delete", "serviceaccount", fmt.Sprintf("%s-sa", name), "-n", namespace).Run()
-	exec.Command("kubectl", "delete", "clusterrolebinding", fmt.Sprintf("%s-binding", name)).Run()
-	// Optional: delete ClusterRole if not shared
-	// exec.Command("kubectl", "delete", "clusterrole", "cluster-reader").Run()
-}
-
-func applyYAML(yaml string) error {
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(yaml)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return cmd.Run()
-}
-
-func serviceAccount(namespace, name string) string {
-	return fmt.Sprintf(`
+const rbacManifest = `
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: %s-sa
-  namespace: %s
-`, name, namespace)
-}
-
-func clusterRole() string {
-	return `
+  name: debugpod-sa
+  namespace: default
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: cluster-reader
+  name: debugpod-role
 rules:
 - apiGroups: [""]
-  resources: ["pods", "nodes", "endpoints", "services", "configmaps", "persistentvolumeclaims"]
+  resources: ["pods", "configmaps", "endpoints", "nodes", "persistentvolumeclaims"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
-  resources: ["deployments", "statefulsets", "replicasets"]
+  resources: ["deployments", "replicasets", "statefulsets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["batch"]
   resources: ["cronjobs"]
@@ -66,22 +33,37 @@ rules:
 - apiGroups: ["admissionregistration.k8s.io"]
   resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
   verbs: ["get", "list", "watch"]
-`
-}
-
-func clusterRoleBinding(namespace, name string) string {
-	return fmt.Sprintf(`
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: %s-binding
+  name: debugpod-binding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-reader
+  name: debugpod-role
 subjects:
 - kind: ServiceAccount
-  name: %s-sa
-  namespace: %s
-`, name, name, namespace)
+  name: debugpod-sa
+  namespace: default
+`
+
+func CreateRBAC() error {
+	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd.Stdin = bytes.NewBufferString(rbacManifest)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create RBAC resources: %v\nOutput: %s", err, output)
+	}
+	return nil
+}
+
+func DeleteRBAC() error {
+	cmd := exec.Command("kubectl", "delete", "-f", "-")
+	cmd.Stdin = bytes.NewBufferString(rbacManifest)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to delete RBAC resources: %v\nOutput: %s", err, output)
+	}
+	return nil
 }

@@ -9,32 +9,29 @@ import (
 )
 
 func RunClusterCheck(userArgs []string) {
-	const (
-		namespace = "default"
-		name      = "debugpod"
-		image     = "arsaphone/debugpod:v2"
-	)
-
 	fmt.Println("Creating debug pod to run k8sgpt...")
 
-	// Prepare k8sgpt command
+	// Create RBAC resources
+	if err := rbac.CreateRBAC(); err != nil {
+		fmt.Printf("Error creating RBAC resources: %v\n", err)
+		return
+	}
+	defer func() {
+		if err := rbac.DeleteRBAC(); err != nil {
+			fmt.Printf("Error deleting RBAC resources: %v\n", err)
+		}
+	}()
+
+	// Construct k8sgpt command
 	args := []string{"analyze", "--output", "text"}
 	args = append(args, userArgs...)
 	cmd := "k8sgpt " + strings.Join(args, " ")
 
-	// Create necessary RBAC resources
-	if err := rbac.CreateRBACResources(namespace, name); err != nil {
-		fmt.Printf("Failed to create RBAC resources: %v\n", err)
-		return
-	}
-	defer rbac.DeleteRBACResources(namespace, name)
-
-	// Run debug pod with the created service account
+	// Run debug pod
 	debugpod.RunDebugPod(debugpod.DebugOptions{
-		Namespace:      namespace,
-		Image:          image,
-		Stay:           false,
-		ServiceAccount: fmt.Sprintf("%s-sa", name),
+		Namespace:      "default",
+		Image:          "arsaphone/debugpod:v2",
 		Command:        []string{"/bin/sh", "-c", cmd},
+		ServiceAccount: "debugpod-sa",
 	})
 }
