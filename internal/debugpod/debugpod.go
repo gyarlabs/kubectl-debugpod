@@ -14,8 +14,9 @@ type DebugOptions struct {
 	Command        []string
 	ServiceAccount string
 	NodeName       string
-	Stay           bool
+	Stay           bool // --bash flag
 	UseBash        bool
+	ClusterCheck   bool
 }
 
 const podTemplate = `
@@ -30,11 +31,18 @@ spec:
   containers:
   - name: debug
     image: {{.Image}}
-    command: {{.Command}}
+    command: ["/bin/sh", "-c"]
+    args: ["{{.PodCommand}}"]
 `
 
 func RunDebugPod(opts DebugOptions) {
-	fmt.Println("Creating debug pod to run k8sgpt...")
+	fmt.Println("Creating debug pod...")
+
+	// Default command
+	podCommand := "sleep 3600"
+	if opts.ClusterCheck {
+		podCommand = "k8sgpt analyze --output text"
+	}
 
 	tmpl, err := template.New("debugpod").Parse(podTemplate)
 	if err != nil {
@@ -42,8 +50,20 @@ func RunDebugPod(opts DebugOptions) {
 		return
 	}
 
+	data := struct {
+		Namespace      string
+		Image          string
+		ServiceAccount string
+		PodCommand     string
+	}{
+		Namespace:      opts.Namespace,
+		Image:          opts.Image,
+		ServiceAccount: opts.ServiceAccount,
+		PodCommand:     podCommand,
+	}
+
 	var podYAML bytes.Buffer
-	err = tmpl.Execute(&podYAML, opts)
+	err = tmpl.Execute(&podYAML, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing pod template: %v\n", err)
 		return
@@ -65,22 +85,55 @@ func RunDebugPod(opts DebugOptions) {
 	waitCmd.Stderr = os.Stderr
 	if err := waitCmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error waiting for pod readiness: %v\n", err)
-		// Proceed to fetch logs even if waiting fails
+		_ = deleteDebugPod(opts.Namespace)
+		return
 	}
 
-	// Stream logs
+	// Handle interactive bash mode
+	if opts.Stay {
+		shell := "/bin/sh"
+		if opts.UseBash {
+			shell = "/bin/bash"
+		}
+
+		execCmd := exec.Command("kubectl", "exec", "-n", opts.Namespace, "-it", "debugpod", "--", shell)
+		execCmd.Stdin = os.Stdin
+		execCmd.Stdout = os.Stdout
+		execCmd.Stderr = os.Stderr
+
+		if err := execCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error running shell: %v\n", err)
+		}
+
+		_ = deleteDebugPod(opts.Namespace)
+		return
+	}
+
+	// Cluster-check: stream logs and delete after
+	if opts.ClusterCheck {
+		logsCmd := exec.Command("kubectl", "logs", "-f", "debugpod", "-n", opts.Namespace)
+		logsCmd.Stdout = os.Stdout
+		logsCmd.Stderr = os.Stderr
+		if err := logsCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error streaming pod logs: %v\n", err)
+		}
+		_ = deleteDebugPod(opts.Namespace)
+		return
+	}
+
+	// Default case: just stream logs
 	logsCmd := exec.Command("kubectl", "logs", "-f", "debugpod", "-n", opts.Namespace)
 	logsCmd.Stdout = os.Stdout
 	logsCmd.Stderr = os.Stderr
 	if err := logsCmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error streaming pod logs: %v\n", err)
 	}
+	_ = deleteDebugPod(opts.Namespace)
+}
 
-	// Delete the pod after execution
-	deleteCmd := exec.Command("kubectl", "delete", "pod", "debugpod", "-n", opts.Namespace)
+func deleteDebugPod(namespace string) error {
+	deleteCmd := exec.Command("kubectl", "delete", "pod", "debugpod", "-n", namespace)
 	deleteCmd.Stdout = os.Stdout
 	deleteCmd.Stderr = os.Stderr
-	if err := deleteCmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error deleting debug pod: %v\n", err)
-	}
+	return deleteCmd.Run()
 }
