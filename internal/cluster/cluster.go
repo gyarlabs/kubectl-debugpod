@@ -5,19 +5,21 @@ import (
 	"strings"
 
 	"github.com/gyarlabs/kubectl-debugpod/internal/debugpod"
-	"github.com/gyarlabs/kubectl-debugpod/internal/rbac"
+	rbac "github.com/gyarlabs/kubectl-debugpod/internal/rbac"
 )
 
 func RunClusterCheck(userArgs []string) {
 	fmt.Println("Creating debug pod to run k8sgpt...")
 
+	namespace := "default"
+
 	// Create RBAC resources
-	if err := rbac.CreateRBAC(); err != nil {
+	if err := rbac.CreateRBAC(namespace); err != nil {
 		fmt.Printf("Error creating RBAC resources: %v\n", err)
 		return
 	}
 	defer func() {
-		if err := rbac.DeleteRBAC(); err != nil {
+		if err := rbac.DeleteRBAC(namespace); err != nil {
 			fmt.Printf("Error deleting RBAC resources: %v\n", err)
 		}
 	}()
@@ -29,9 +31,10 @@ func RunClusterCheck(userArgs []string) {
 
 	// Run debug pod
 	debugpod.RunDebugPod(debugpod.DebugOptions{
-		Namespace:      "default",
+		Namespace:      namespace,
 		Image:          "arsaphone/debugpod:v2",
 		Command:        []string{"/bin/sh", "-c", cmd},
 		ServiceAccount: "debugpod-sa",
+		ClusterCheck:   true,
 	})
 }

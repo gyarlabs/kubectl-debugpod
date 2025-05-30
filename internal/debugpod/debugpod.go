@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"text/template"
+
+	rbac "github.com/gyarlabs/kubectl-debugpod/internal/rbac"
 )
 
 type DebugOptions struct {
@@ -51,12 +53,12 @@ func RunDebugPod(opts DebugOptions) {
 	}
 
 	if opts.ClusterCheck {
-		err := CreateRBAC(opts.Namespace)
+		err := rbac.CreateRBAC(opts.Namespace)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating RBAC resources: %v\n", err)
 			return
 		}
-		defer DeleteRBAC(opts.Namespace)
+		defer rbac.DeleteRBAC(opts.Namespace)
 	}
 
 	data := struct {
@@ -79,12 +81,12 @@ func RunDebugPod(opts DebugOptions) {
 	}
 
 	if opts.ClusterCheck {
-		err := CreateRBAC(opts.Namespace)
+		err := rbac.CreateRBAC(opts.Namespace)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating RBAC resources: %v\n", err)
 			return
 		}
-		defer DeleteRBAC(opts.Namespace)
+		defer rbac.DeleteRBAC(opts.Namespace)
 	}
 
 	// Apply the pod manifest
