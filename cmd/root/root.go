@@ -1,13 +1,16 @@
 package root
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/gyarlabs/kubectl-debugpod/internal/cluster"
 	"github.com/gyarlabs/kubectl-debugpod/internal/debugpod"
 	"github.com/gyarlabs/kubectl-debugpod/internal/limits"
 	"github.com/gyarlabs/kubectl-debugpod/internal/secrets"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
@@ -27,20 +30,22 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "kubectl-debugpod",
 	Short: "A Kubernetes CLI plugin to launch debug pods and check cluster state",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if clusterCheck {
 			cluster.RunClusterCheck(clusterArgs)
-			return
+			return nil
 		}
 
 		if secretsNs != "" {
-			secrets.GetSecrets(secretsNs, secretsName, decodeSecrets)
-			return
+			return secrets.GetSecrets(secretsNs, secretsName, decodeSecrets)
 		}
 
 		if checkLimits {
-			limits.CheckLimits()
-			return
+			return limits.CheckLimits(namespace)
+		}
+
+		if strings.EqualFold(namespace, "all") {
+			return fmt.Errorf("--namespace all is only supported together with --check-limits")
 		}
 
 		debugpod.RunDebugPod(debugpod.DebugOptions{
@@ -49,14 +54,17 @@ var rootCmd = &cobra.Command{
 			Image:          image,
 			Stay:           stay,
 			UseBash:        useBash,
-			ServiceAccount: "debugpod-sa",
+			ServiceAccount: "",
 			ClusterCheck:   clusterCheck,
 		})
+		return nil
 	},
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", "default", "Target namespace")
+	defaultNamespace := detectDefaultNamespace()
+
+	rootCmd.PersistentFlags().StringVarP(&namespace, "namespace", "n", defaultNamespace, "Target namespace (defaults to current kubectl namespace; use 'all' with --check-limits)")
 	rootCmd.PersistentFlags().StringVar(&nodeName, "node", "", "Schedule the pod to a specific node")
 	rootCmd.PersistentFlags().StringVar(&image, "image", "arsaphone/debugpod:v2", "Docker image for the debug pod")
 	rootCmd.PersistentFlags().BoolVar(&stay, "stay", false, "Don't auto-delete the pod after exit")
@@ -70,10 +78,28 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&decodeSecrets, "decode", false, "Decode secret values (base64)")
 
 	rootCmd.PersistentFlags().BoolVar(&checkLimits, "check-limits", false, "Check for missing resource limits in deployments")
+
+	rootCmd.MarkFlagsMutuallyExclusive("cluster-check", "check-limits")
+	rootCmd.MarkFlagsMutuallyExclusive("cluster-check", "secrets")
 }
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func detectDefaultNamespace() string {
+	config := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{},
+	)
+
+	ns, _, err := config.Namespace()
+	if err == nil && ns != "" {
+		return ns
+	}
+
+	return "default"
 }

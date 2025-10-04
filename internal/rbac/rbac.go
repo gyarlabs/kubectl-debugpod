@@ -1,23 +1,21 @@
-package debugpod
+package rbac
 
 import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
-func CreateRBAC(namespace string) error {
-	fmt.Println("Creating RBAC resources...")
-
-	serviceAccount := fmt.Sprintf(`
+const serviceAccountManifest = `
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: debugpod-sa
   namespace: %s
-`, namespace)
+`
 
-	clusterRole := `
+const clusterRoleManifest = `
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -31,7 +29,7 @@ rules:
   verbs: ["get", "list", "watch"]
 `
 
-	clusterRoleBinding := fmt.Sprintf(`
+const clusterRoleBindingManifest = `
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -44,16 +42,20 @@ roleRef:
   kind: ClusterRole
   name: debugpod-role
   apiGroup: rbac.authorization.k8s.io
-`, namespace)
+`
 
-	resources := []string{serviceAccount, clusterRole, clusterRoleBinding}
+func CreateRBAC(namespace string) error {
+	fmt.Println("Creating RBAC resources...")
 
-	for _, resource := range resources {
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = stringToReader(resource)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
+	manifests := []string{
+		fmt.Sprintf(serviceAccountManifest, namespace),
+		clusterRoleManifest,
+		fmt.Sprintf(clusterRoleBindingManifest, namespace),
+	}
+
+	for _, manifest := range manifests {
+		if err := applyManifest(manifest); err != nil {
+			DeleteRBAC(namespace)
 			return fmt.Errorf("failed to create RBAC resource: %w", err)
 		}
 	}
@@ -70,26 +72,19 @@ func DeleteRBAC(namespace string) {
 	}
 
 	for _, args := range resources {
-		cmd := exec.Command("kubectl", append([]string{"delete"}, args...)...)
+		cmd := exec.Command("kubectl", append([]string{"delete", "--ignore-not-found"}, args...)...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		_ = cmd.Run() // ignore errors on cleanup
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to delete RBAC resource (%s): %v\n", strings.Join(args, " "), err)
+		}
 	}
 }
 
-func stringToReader(s string) *os.File {
-	tmpfile, err := os.CreateTemp("", "rbac-*.yaml")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create temp file: %v\n", err)
-		os.Exit(1)
-	}
-	_, _ = tmpfile.Write([]byte(s))
-	_ = tmpfile.Close()
-
-	f, err := os.Open(tmpfile.Name())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to reopen temp file: %v\n", err)
-		os.Exit(1)
-	}
-	return f
+func applyManifest(manifest string) error {
+	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
