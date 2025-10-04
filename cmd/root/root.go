@@ -8,23 +8,19 @@ import (
 	"github.com/gyarlabs/kubectl-debugpod/internal/cluster"
 	"github.com/gyarlabs/kubectl-debugpod/internal/debugpod"
 	"github.com/gyarlabs/kubectl-debugpod/internal/limits"
-	"github.com/gyarlabs/kubectl-debugpod/internal/secrets"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 var (
-	namespace     string
-	nodeName      string
-	image         string
-	stay          bool
-	useBash       bool
-	clusterCheck  bool
-	clusterArgs   []string
-	secretsNs     string
-	secretsName   string
-	decodeSecrets bool
-	checkLimits   bool
+	namespace    string
+	nodeName     string
+	image        string
+	stay         bool
+	useBash      bool
+	clusterCheck bool
+	clusterArgs  []string
+	checkLimits  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,10 +30,6 @@ var rootCmd = &cobra.Command{
 		if clusterCheck {
 			cluster.RunClusterCheck(clusterArgs)
 			return nil
-		}
-
-		if secretsNs != "" {
-			return secrets.GetSecrets(secretsNs, secretsName, decodeSecrets)
 		}
 
 		if checkLimits {
@@ -73,14 +65,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&clusterCheck, "cluster-check", false, "Run k8sgpt analysis")
 	rootCmd.PersistentFlags().StringSliceVar(&clusterArgs, "cluster-args", []string{}, "Extra arguments for k8sgpt")
 
-	rootCmd.PersistentFlags().StringVar(&secretsNs, "secrets", "", "Fetch secrets from a specific namespace")
-	rootCmd.PersistentFlags().StringVar(&secretsName, "secret-name", "", "Specific secret name to filter")
-	rootCmd.PersistentFlags().BoolVar(&decodeSecrets, "decode", false, "Decode secret values (base64)")
-
 	rootCmd.PersistentFlags().BoolVar(&checkLimits, "check-limits", false, "Check for missing resource limits in deployments")
 
 	rootCmd.MarkFlagsMutuallyExclusive("cluster-check", "check-limits")
-	rootCmd.MarkFlagsMutuallyExclusive("cluster-check", "secrets")
 }
 
 func Execute() {
